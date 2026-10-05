@@ -1,0 +1,5 @@
+include README.md README.en.md LICENSE
+recursive-include src/panelpop/static *.html *.css *.js
+recursive-include tests *.py
+recursive-include docs *.md
+include .github/workflows/ci.yml
