@@ -95,7 +95,7 @@ class WindowsBackend:
         # so they cannot cover the target. A failed query counts as drawn.
         if self.dwm is None:
             return False
-        value = wintypes.DWORD()
+        value = ctypes.c_uint32()  # DWORD; wintypes.DWORD is 8 bytes off Windows
         result = self.dwm.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(value), ctypes.sizeof(value))  # DWMWA_CLOAKED
         return result == 0 and value.value != 0
 
