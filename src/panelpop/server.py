@@ -6,13 +6,17 @@ import json
 from pathlib import Path
 import secrets
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 import qrcode
 from .core import SafetyError
 
 STATIC = Path(__file__).with_name('static')
-CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+MAX_JSON = 32768
+DRAIN_BYTES = 2 * MAX_JSON
+DRAIN_SECONDS = 2.0
+CSP ="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 
 
 def is_loopback(address):
@@ -71,6 +75,29 @@ class Handler(BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
         self.connection.settimeout(3)
+    def parse_request(self):
+        ok = super().parse_request()
+        length = self.headers.get('Content-Length', '') if ok else ''
+        self.unread = int(length) if length.isascii() and length.isdecimal() else 0
+        return ok
+    def finish(self):
+        # Rejections are sent before the body is read. Closing a socket with unread
+        # data makes Windows reset the connection, and the browser then loses the
+        # error response, so discard a bounded remainder after replying.
+        try:
+            if getattr(self, 'unread', 0) and not self.wfile.closed:
+                self.wfile.flush()
+                deadline, remaining = time.monotonic() + DRAIN_SECONDS, min(self.unread, DRAIN_BYTES)
+                while remaining > 0 and time.monotonic() < deadline:
+                    self.connection.settimeout(max(.01, deadline - time.monotonic()))
+                    chunk = self.rfile.read1(remaining)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+        except OSError:
+            pass
+        finally:
+            super().finish()
     def log_message(self, *args):
         # Request paths, headers and fragment-derived credentials never go to logs.
         pass
@@ -124,10 +151,11 @@ class Handler(BaseHTTPRequestHandler):
         if not length.isascii() or not length.isdecimal():
             raise HTTPError(400, 'Content-Lengthが無効です。')
         length = int(length)
-        if length > 32768:
+        if length > MAX_JSON:
             raise HTTPError(413, '送信データが大きすぎます。')
         def invalid_constant(value):
             raise ValueError('Non-finite number')
+        self.unread = 0
         try:
             body = json.loads(self.rfile.read(length), parse_constant=invalid_constant)
             if not isinstance(body, dict):

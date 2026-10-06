@@ -45,6 +45,15 @@ class FakeAPI:
         return self.sent
 
 
+class FakeDWM:
+    def __init__(self, cloaked=(), result=0):
+        self.cloaked, self.result = set(cloaked), result
+    def DwmGetWindowAttribute(self, hwnd, attribute, value, size):
+        assert attribute == 14 and size == 4  # DWMWA_CLOAKED, DWORD
+        value._obj.value = 1 if hwnd in self.cloaked else 0
+        return self.result
+
+
 class WindowsContractTests(unittest.TestCase):
     def setUp(self):
         self.api = FakeAPI()
@@ -57,6 +66,15 @@ class WindowsContractTests(unittest.TestCase):
         self.assertFalse(self.backend.safe(self.backend.snapshot(10)))
         self.api.overlap = False
         self.assertTrue(self.backend.safe(self.backend.snapshot(10)))
+    def test_cloaked_higher_window_does_not_occlude(self):
+        # Windows 11 keeps never-drawn cloaked windows above normal apps.
+        self.backend.dwm = FakeDWM(cloaked={20})
+        self.assertTrue(self.backend.safe(self.backend.snapshot(10)))
+        self.backend.dwm = FakeDWM(cloaked={30})
+        self.assertFalse(self.backend.safe(self.backend.snapshot(10)))
+    def test_failed_cloak_query_counts_as_drawn(self):
+        self.backend.dwm = FakeDWM(cloaked={20}, result=-2147024809)  # E_INVALIDARG
+        self.assertFalse(self.backend.safe(self.backend.snapshot(10)))
     def test_point_root_must_match_target(self):
         self.api.overlap = False
         self.api.root = 30

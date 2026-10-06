@@ -65,6 +65,13 @@ def load_api():
     return api
 
 
+def load_dwm():
+    dwm = ctypes.WinDLL('dwmapi')
+    dwm.DwmGetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+    dwm.DwmGetWindowAttribute.restype = ctypes.c_long  # HRESULT
+    return dwm
+
+
 def enable_dpi(api):
     # Must execute before capture, window enumeration, or opening any UI.
     if not api.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
@@ -75,10 +82,22 @@ def enable_dpi(api):
 
 class WindowsBackend:
     demo = False
+    dwm = None
     def __init__(self):
         self.api = load_api()
         enable_dpi(self.api)
+        self.dwm = load_dwm()
         self._input_target = None
+
+    def cloaked(self, hwnd):
+        # Windows 10/11 keep suspended UWP apps and shell surfaces (for example
+        # "Windows Input Experience") visible but cloaked: DWM never draws them,
+        # so they cannot cover the target. A failed query counts as drawn.
+        if self.dwm is None:
+            return False
+        value = wintypes.DWORD()
+        result = self.dwm.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(value), ctypes.sizeof(value))  # DWMWA_CLOAKED
+        return result == 0 and value.value != 0
 
     def snapshot(self, hwnd):
         api = self.api
@@ -97,7 +116,7 @@ class WindowsBackend:
         result, hwnd, seen = [], self.api.GetTopWindow(None), set()
         while hwnd and int(hwnd) not in seen and len(seen) < 4096:
             seen.add(int(hwnd))
-            if self.api.IsWindowVisible(hwnd) and not self.api.IsIconic(hwnd):
+            if self.api.IsWindowVisible(hwnd) and not self.api.IsIconic(hwnd) and not self.cloaked(hwnd):
                 length = min(self.api.GetWindowTextLengthW(hwnd), 1024)
                 if length:
                     title = ctypes.create_unicode_buffer(length + 1)
@@ -120,7 +139,7 @@ class WindowsBackend:
             if int(hwnd) in seen or len(seen) >= 4096:
                 return False
             seen.add(int(hwnd))
-            if api.IsWindowVisible(hwnd) and not api.IsIconic(hwnd):
+            if api.IsWindowVisible(hwnd) and not api.IsIconic(hwnd) and not self.cloaked(hwnd):
                 rect = RECT()
                 if not api.GetWindowRect(hwnd, ctypes.byref(rect)):
                     return False

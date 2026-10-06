@@ -1,72 +1,98 @@
 # PanelPop
 
-PanelPop shares one to four live regions of a Windows application's client area with a phone browser. It starts in view-only mode. The PC operator can explicitly allow a phone tap to become a left mouse click.
+[![CI](https://github.com/anpanmanj987-hub/PanelPop/actions/workflows/ci.yml/badge.svg)](https://github.com/anpanmanj987-hub/PanelPop/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4)
 
-**Version 0.1.0a2 · MIT · Windows 10/11 · Python 3.10+.** This repository is independent and includes no signed executable. A clearly marked synthetic demo runs on macOS/Linux without desktop capture or OS input. [日本語README](README.md)
+**Put just the part of a Windows app you need on your phone.**
 
-Version 0.1.0a2 rechecks frame expiry after safety inspection and immediately before native input. A failed cursor readback or actual position differing from the requested screen coordinates prevents input, pauses the session and revokes control permission.
+PanelPop crops one to four regions out of a Windows window and streams them live to a phone browser on the same Wi-Fi. When you allow it on the PC, a tap on the phone becomes a left click at that spot. Nothing to install on the phone, and no cloud.
 
-Version 0.1.0a2 is the post-review source release. [Validation](docs/VALIDATION.md) separates the current Linux checks from historical 0.1.0a1 macOS evidence.
+[日本語 README](README.md)
 
-## Install and start
+![Select regions on the PC (left), view and tap them on the phone (right)](docs/images/panelpop.png)
 
-From this repository's root on Windows:
+<sub>Screenshots use the synthetic `--demo` mode; no real desktop is shown. The interface is in Japanese.</sub>
+
+## Good for
+
+- Watching a long build or render progress bar from another room
+- Keeping only the record button of a capture tool, or one dashboard chart, at hand
+- Glancing at part of a PC screen in another room from your phone
+
+## Features
+
+- **Only the regions you need**: drag up to four rectangles instead of mirroring the whole window.
+- **View-only by default**: taps work only after you allow phone control on the PC. Stop, resume and permission changes are PC-only.
+- **Guards against misclicks**: every frame expires after two seconds; moving, resizing, minimizing or covering the window pauses the session, and it never resumes on its own; the cursor position is read back right before clicking.
+- **Stays local**: no external servers, CDNs or analytics. URLs carry a secret token generated at each launch.
+- **Two dependencies**: Pillow and qrcode.
+
+## Quick start
+
+Requires Windows 10/11 and Python 3.10 or newer. In PowerShell:
 
 ```powershell
-py -m venv .venv
-.venv\Scripts\python -m pip install .
-.venv\Scripts\python -m panelpop --open
+py -m venv panelpop-env
+panelpop-env\Scripts\python -m pip install https://github.com/anpanmanj987-hub/PanelPop/archive/refs/tags/v0.1.0a3.zip
+panelpop-env\Scripts\python -m panelpop --demo --open
 ```
 
-The default listener is `127.0.0.1:8765`. Open the **PC admin** URL printed in the terminal on this PC. `--open` opens that local settings page in your default browser.
+`--demo` uses generated images only: it never captures the screen or sends OS input, and it also runs on macOS and Linux. The PC settings page opens in your browser; drag regions on the preview and apply them.
 
-For a phone, explicitly enable LAN access and advertise this PC's private IPv4 address. Replace the example address with your own:
+Drop `--demo` to use real windows. For a phone, explicitly enable LAN listening with this PC's private IPv4 address (the "IPv4 Address" line of `ipconfig`):
 
 ```powershell
-.venv\Scripts\python -m panelpop --lan --advertise 192.168.1.20 --open
+panelpop-env\Scripts\python -m panelpop --lan --advertise 192.168.1.20 --open
 ```
 
-Use the same trusted private network on the PC and phone. If Windows Firewall prompts, allow TCP 8765 only on the appropriate private network. Wi-Fi client isolation, VPNs and different subnets can prevent access. Only RFC1918 IPv4 addresses are accepted. IPv6 and reverse-proxy hosting are outside this alpha's scope.
+Replace `192.168.1.20` with your PC's address. Put the PC and phone on the same trusted Wi-Fi. If Windows Firewall asks, allow TCP 8765 on private networks only.
 
-## Use
+## How to use
 
-1. Select a window in the PC settings page and load its live preview. Arrange the window and settings browser side by side so they do not overlap.
-2. Drag one to four rectangles in the preview, then apply the regions. Coordinates are integer pixels within the client area.
-3. Open the viewer URL or scan its QR code from the phone. Panels update in view-only mode.
-4. If needed, enable phone control on the PC. Taps on a panel become left clicks at that location.
-5. Use the PC's persistent **Stop** button to stop both display and input. Rearm on the PC; this restores view-only mode. `Ctrl+C` shuts down the host.
+1. On the PC settings page, pick the target window and show its preview. Place the settings browser and the target side by side so they do not overlap.
+2. Drag one to four regions on the preview and apply them.
+3. Scan the QR code with your phone. Panels update live in view-only mode.
+4. To control the PC, enable phone control on the PC. Tapping a panel left-clicks that spot on the PC.
+5. The always-visible Stop button halts both display and input. Resume on the PC; resuming returns to view-only. `Ctrl+C` shuts the host down.
 
-Changes to the target position, size, process identity, visibility or minimized state, and detected occlusion, latch a pause. Moving the window back does not resume it automatically. Clear the obstruction and explicitly resume on the PC, or select/configure the target again. A reused window handle with another PID requires selection again. The rectangle counter is the current draft selection; zero after reloading the admin page does not clear previously applied regions.
+Any change to the window's position, size, process or visibility, or an overlapping window, pauses the session. Restoring the window does not resume it: resume on the PC or select the target again.
 
-## Synthetic demo
+## Safety design
+
+- Separate PC-admin and viewer tokens. Admin APIs accept loopback connections only, so a phone cannot configure, resume or grant control.
+- Taps on stale or unknown frames and out-of-range coordinates are refused. A network failure clears the panels and never reports success.
+- Occlusion checks are conservative: transparent windows and pop-ups above the target count as covering it. Cloaked windows that Windows never draws are ignored.
+- After moving the cursor, PanelPop reads its real position back and refuses to click if it differs.
+
+## Limitations
+
+- LAN traffic is unencrypted HTTP. Use a trusted network only and never expose the port to the internet. Restarting the host revokes leaked URLs or QR codes.
+- Checks and the click are not atomic; a change right after the last check can still misdirect a click. Do not use PanelPop for safety-critical operations.
+- Left click only: no scrolling, keyboard input or long press. Windows UIPI can block clicks into elevated (administrator) apps.
+- Targets up to 16 million pixels (8192 px per edge) and four regions. Protected video may not be capturable.
+
+## Verification status
+
+- **Automated tests**: 34 cases, run by GitHub Actions on Windows and Linux with Python 3.10, 3.12 and 3.14.
+- **Real Windows**: on 2026-10-06, Windows 11 at 150% display scaling with Python 3.14.8: capture and cropping of a real window, a tap turning into a real click, and refusal of taps on expired frames, while stopped and after the window moved.
+- **Not yet verified**: real phones over a real LAN, multiple or mixed-DPI monitors, elevated target apps.
+
+See the [validation record](docs/VALIDATION.md) and [design notes](docs/DESIGN.md).
+
+## Development
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install .
-.venv/bin/python -m panelpop --demo --open
-```
-
-The synthetic demo uses generated moving panels. An allowed tap draws a yellow marker; it never captures the desktop or sends OS input. To use the demo from a phone, also provide `--lan --advertise YOUR_PC_PRIVATE_IPV4`.
-
-## Limits and precautions
-
-- LAN HTTP is unencrypted. Use only a trusted private network; do not expose it to the internet. Each launch creates separate random viewer/admin credentials. URLs and QR codes contain secrets. Restart the host to revoke them.
-- Admin APIs require both the admin token and a loopback TCP source address. A phone cannot stop, rearm, configure or change control mode. Viewer credentials cannot call admin APIs. No request URLs or credentials are logged.
-- Every displayed frame expires after two seconds. Unknown/expired frames and invalid/outside tap coordinates are refused. Network failure clears the display and does not report input success.
-- Capture reads visible desktop pixels, cropped to the client area. Higher overlapping windows are conservatively rejected, including transparent windows and popups. Protected video may not capture correctly.
-- Per-monitor DPI awareness and negative monitor coordinates are supported in code. Checks and OS input are not atomic: a last-moment change can still misdirect input. Do not use this alpha for safety-critical operations.
-- Input moves the PC cursor and sends left down/up. Windows UIPI can block input to elevated apps. A failed or partial `SendInput` is reported and pauses the session. There is no keyboard, scroll, long-press or multi-touch support.
-- Bounds: 16 million target pixels, 8192 pixels per edge, four regions, eight retained frames, 16 concurrent handlers, 32 KiB JSON bodies, three-second socket timeout. Stop shares the capture/input lock and can wait for a pending native OS operation.
-
-## Development and verification
-
-```sh
+git clone https://github.com/anpanmanj987-hub/PanelPop.git
+cd PanelPop
 python -m pip install -e . build
 python -m unittest discover -s tests -v
-python -m panelpop --help
 python -m build
 ```
 
-On 2026-10-03, macOS verification passed 21 core/native-contract/real-HTTP tests and four CLI tests. A browser against the real HTTP synthetic demo completed target selection, preview rectangle dragging, apply, PC control enable, phone-style panel tap and PC Stop. **Native Windows capture/input/DPI/multiple monitors and a physical smartphone are unverified.** Linux/Windows CI runs tests and builds wheel/sdist across Python versions; its native API fixtures are not interactive Windows validation.
+Bug reports and ideas are welcome in [Issues](https://github.com/anpanmanj987-hub/PanelPop/issues). See the [changelog](CHANGELOG.md).
 
-See [design](docs/DESIGN.md), [validation and hardware checklist](docs/VALIDATION.md), [publishing](docs/PUBLISHING.md), [handoff](docs/HANDOFF.md) and [implementation report](docs/IMPLEMENTATION-REPORT.md).
+## License
+
+[MIT](LICENSE)

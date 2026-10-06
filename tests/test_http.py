@@ -62,6 +62,10 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/click', 'POST', {'id': frame['id'], 'panel': 0, 'x': .5, 'y': .5})[0], 409)
         self.assertEqual(self.request('/api/admin/mode', 'POST', {'control': True}, 'admin-secret')[0], 200)
         self.assertEqual(self.request('/api/click', 'POST', {'id': frame['id'], 'panel': 0, 'x': .5, 'y': .5})[0], 200)
+    def test_rejected_post_body_does_not_reset_the_reply(self):
+        # Windows resets a socket closed with unread data, hiding the error from the browser.
+        for _ in range(10):
+            self.assertEqual(self.request('/api/click', 'POST', {'pad': 'x' * 30000}, token='stale')[0], 401)
     def test_phone_stop_and_resume_routes_do_not_exist(self):
         for path in ('/api/stop', '/api/resume', '/api/mode'):
             self.assertEqual(self.request(path, 'POST', {})[0], 404)
