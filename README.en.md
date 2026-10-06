@@ -11,9 +11,9 @@ PanelPop crops one to four regions out of a Windows window and streams them live
 
 [日本語 README](README.md)
 
-![Select regions on the PC (left), view and tap them on the phone (right)](docs/images/panelpop.png)
+![Select regions on the PC (left), view and tap them on the phone (right)](docs/images/panelpop.en.png)
 
-<sub>Screenshots use the synthetic `--demo` mode; no real desktop is shown. The interface is in Japanese.</sub>
+<sub>Screenshots use the synthetic `--demo` mode; no real desktop is shown.</sub>
 
 ## Good for
 
@@ -27,6 +27,7 @@ PanelPop crops one to four regions out of a Windows window and streams them live
 - **View-only by default**: taps work only after you allow phone control on the PC. Stop, resume and permission changes are PC-only.
 - **Guards against misclicks**: every frame expires after two seconds; moving, resizing, minimizing or covering the window pauses the session, and it never resumes on its own; the cursor position is read back right before clicking.
 - **Stays local**: no external servers, CDNs or analytics. URLs carry a secret token generated at each launch.
+- **English and Japanese**: the interface and messages follow your browser language; switch any time with the button at the top right.
 - **Two dependencies**: Pillow and qrcode.
 
 ## Quick start
@@ -35,7 +36,7 @@ Requires Windows 10/11 and Python 3.10 or newer. In PowerShell:
 
 ```powershell
 py -m venv panelpop-env
-panelpop-env\Scripts\python -m pip install https://github.com/anpanmanj987-hub/PanelPop/archive/refs/tags/v0.1.0a3.zip
+panelpop-env\Scripts\python -m pip install https://github.com/anpanmanj987-hub/PanelPop/archive/refs/tags/v0.1.0a4.zip
 panelpop-env\Scripts\python -m panelpop --demo --open
 ```
 
@@ -75,7 +76,7 @@ Any change to the window's position, size, process or visibility, or an overlapp
 
 ## Verification status
 
-- **Automated tests**: 34 cases, run by GitHub Actions on Windows and Linux with Python 3.10, 3.12 and 3.14.
+- **Automated tests**: 44 cases, run by GitHub Actions on Windows and Linux with Python 3.10, 3.12 and 3.14.
 - **Real Windows**: on 2026-10-06, Windows 11 at 150% display scaling with Python 3.14.8: capture and cropping of a real window, a tap turning into a real click, and refusal of taps on expired frames, while stopped and after the window moved.
 - **Not yet verified**: real phones over a real LAN, multiple or mixed-DPI monitors, elevated target apps.
 

@@ -9,10 +9,10 @@ class DemoBackend:
     def __init__(self):
         self.last_click = None
     def windows(self):
-        return [dict(hwnd=1, pid=1, title='SYNTHETIC DEMO / 合成デモ')]
+        return [dict(hwnd=1, pid=1, title='SYNTHETIC DEMO')]
     def snapshot(self, hwnd):
         if hwnd != 1:
-            raise SafetyError('デモ対象は1だけです。')
+            raise SafetyError('demo_target')
         return Geometry(1, 1, 0, 0, 960, 540, True, False)
     def safe(self, geometry, point=None):
         return True

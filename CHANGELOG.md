@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0a4 — 2026-10-06
+
+- English interface. The PC settings page and the phone viewer follow the browser language (Japanese when it comes first, English otherwise), with a toggle that is remembered and a `?lang=ja|en` override. The host answers in the page's language via `Accept-Language`; clients without it get English.
+- Pause reasons are stored as message keys, so a PC page in Japanese and a phone in English each see their own language.
+- The synthetic demo's window is listed as "SYNTHETIC DEMO".
+- Tests check that both languages define the same keys and that every key used by the pages and the host exists.
+
 ## 0.1.0a3 — 2026-10-06
 
 - Fix: on Windows 10/11, cloaked windows (suspended UWP apps, "Windows Input Experience" and other surfaces that DWM never draws) were treated as covering the target. They sit above normal windows, so most targets, including every maximized window, were refused as occluded. Cloaked windows are now ignored for occlusion and are not listed as targets; a failed cloak query still counts as covering.

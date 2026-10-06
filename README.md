@@ -27,6 +27,7 @@ PanelPop は、Windowsのウィンドウから1〜4個の領域を切り出し�
 - **最初は閲覧専用**：タップ操作はPCで「スマホ操作を許可」を選んだときだけ有効になります。停止・再開・許可の切り替えはPCからしかできません。
 - **誤クリックを防ぐ仕組み**：表示中の画像は2秒で失効します。ウィンドウの移動・リサイズ・最小化や、他のウィンドウとの重なりを検出すると自動で停止し、自動では再開しません。クリック直前にもカーソル位置を再確認します。
 - **ローカルで完結**：外部サーバー、CDN、解析ツールは使いません。接続URLには起動ごとに生成する秘密トークンが含まれます。
+- **日本語と英語に対応**：画面とメッセージはブラウザの言語に合わせて切り替わります。右上のボタンでいつでも変更できます。
 - **依存は2つだけ**：Pillow と qrcode です。
 
 ## クイックスタート
@@ -35,7 +36,7 @@ Windows 10/11 と Python 3.10 以上が必要です。PowerShell で実行しま
 
 ```powershell
 py -m venv panelpop-env
-panelpop-env\Scripts\python -m pip install https://github.com/anpanmanj987-hub/PanelPop/archive/refs/tags/v0.1.0a3.zip
+panelpop-env\Scripts\python -m pip install https://github.com/anpanmanj987-hub/PanelPop/archive/refs/tags/v0.1.0a4.zip
 panelpop-env\Scripts\python -m panelpop --demo --open
 ```
 
@@ -75,7 +76,7 @@ panelpop-env\Scripts\python -m panelpop --lan --advertise 192.168.1.20 --open
 
 ## 動作確認の状況
 
-- **自動テスト**：34件。GitHub ActionsでWindows・Linux × Python 3.10 / 3.12 / 3.14 を実行しています。
+- **自動テスト**：44件。GitHub ActionsでWindows・Linux × Python 3.10 / 3.12 / 3.14 を実行しています。
 - **Windows実機**：2026年10月6日に、Windows 11（表示スケール150%）とPython 3.14.8で、実際のウィンドウに対する画面取得・領域の切り出し・タップによるクリック、そして期限切れ・停止中・ウィンドウ移動後のタップが拒否されることを確認しました。
 - **未確認**：実際のスマートフォンとLAN経由での接続、複数モニターやDPIの異なるモニターの組み合わせ、管理者権限のアプリ。
 

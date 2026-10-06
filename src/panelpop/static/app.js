@@ -1,18 +1,58 @@
 'use strict';
 const admin = document.body.dataset.page === 'admin';
 const $ = id => document.getElementById(id);
+const TEXT = window.PANELPOP_TEXT;
+// ?lang=ja|en, then the remembered choice, then the browser's first ja/en preference.
+function pickLanguage() {
+  const asked = new URLSearchParams(location.search).get('lang');
+  if (asked === 'ja' || asked === 'en') return asked;
+  try {
+    const saved = localStorage.getItem('panelpop-lang');
+    if (saved === 'ja' || saved === 'en') return saved;
+  } catch {}
+  for (const tag of navigator.languages?.length ? navigator.languages : [navigator.language || '']) {
+    if (/^ja\b/i.test(tag)) return 'ja';
+    if (/^en\b/i.test(tag)) return 'en';
+  }
+  return 'en';
+}
+let lang = pickLanguage();
+function t(name, params = {}) {
+  return (TEXT[lang][name] ?? TEXT.en[name] ?? name).replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? ''));
+}
+function applyText() {
+  document.documentElement.lang = lang;
+  document.title = t(admin ? 'admin_title' : 'viewer_title');
+  for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
+  for (const element of document.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of element.dataset.i18nAttr.split(';')) {
+      const [attribute, name] = pair.split(':');
+      element.setAttribute(attribute, t(name));
+    }
+  }
+  $('lang').textContent = t('switch_language');
+  $('lang').setAttribute('lang', lang === 'ja' ? 'en' : 'ja');
+}
+applyText();
+$('status').textContent = t('connecting');
 const key = admin ? 'panelpop-admin-token' : 'panelpop-viewer-token';
 const fragment = new URLSearchParams(location.hash.slice(1));
 const suppliedToken = fragment.get('token');
 if (suppliedToken) sessionStorage.setItem(key, suppliedToken);
 const token = suppliedToken || sessionStorage.getItem(key) || '';
-if (location.hash) history.replaceState(null, '', location.pathname);
-let busy = false;
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+let busy = false, onLanguageChange = () => {};
+$('lang').addEventListener('click', () => {
+  lang = lang === 'ja' ? 'en' : 'ja';
+  try { localStorage.setItem('panelpop-lang', lang); } catch {}
+  applyText(); onLanguageChange();
+});
 async function api(path, data, blob = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3500);
   try {
-    const options = {headers: {'X-PanelPop-Token': token}, credentials: 'omit', signal: controller.signal};
+    // Accept-Language makes the host answer in the interface language.
+    const options = {headers: {'X-PanelPop-Token': token, 'Accept-Language': lang}, credentials: 'omit', signal: controller.signal};
     // Keep fetch's default CORS mode: it sends Origin for same-origin mutations,
     // including under the server's no-referrer policy. Never set mode:same-origin.
     if (data !== undefined) {
@@ -21,15 +61,17 @@ async function api(path, data, blob = false) {
     const response = await fetch(path, options);
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      throw new Error(result.error || `HTTP ${response.status}`);
+      throw new Error(result.error || t('http_error', {status: response.status}));
     }
     if (blob) return {blob: await response.blob(), response};
-    return response.json();
+    return await response.json();
+  } catch (error) {
+    throw error.name === 'AbortError' ? new Error(t('timeout')) : error;
   } finally { clearTimeout(timer); }
 }
 function displayStatus(status) {
   $('demo').hidden = !status.demo;
-  $('status').textContent = status.paused ? `停止中 — ${status.reason}` : !status.configured ? 'PCで対象ウィンドウと領域を設定してください。' : status.control ? '接続中 · スマホ操作を許可しています' : '接続中 · 閲覧専用';
+  $('status').textContent = status.paused ? t('status_stopped', {reason: status.reason}) : !status.configured ? t('status_not_configured') : status.control ? t('status_control') : t('status_view_only');
   if (admin) {
     $('control').checked = status.control;
     $('control').disabled = status.paused || !status.configured || busy;
@@ -42,7 +84,7 @@ function replaceImage(image, blob) {
   const url = URL.createObjectURL(blob); image.dataset.objectUrl = url; image.src = url;
   if (previous) URL.revokeObjectURL(previous);
 }
-if (!token) showError('接続トークンがありません。PC起動時のURLまたはQRから開いてください。');
+if (!token) showError(t('no_token'));
 
 if (admin) {
   let hwnd = null, regions = [], width = 0, height = 0, drag = null, previewActive = false, generation = 0;
@@ -55,7 +97,7 @@ if (admin) {
       context.strokeStyle = '#80f4de'; context.fillStyle = '#80f4de22'; context.fillRect(x, y, w, h); context.strokeRect(x, y, w, h);
       context.fillStyle = '#ffffff'; context.fillText(`${i + 1}`, x + 5, y + 22);
     });
-    $('regions').textContent = `選択領域: ${regions.length} / 4 · ${regions.map(r => r.join(', ')).join(' / ')}`;
+    $('regions').textContent = t('regions_count', {count: regions.length}) + (regions.length ? ` · ${regions.map(r => r.join(', ')).join(' / ')}` : '');
   }
   function point(event) {
     const rect = $('selection').getBoundingClientRect();
@@ -80,7 +122,7 @@ if (admin) {
       const option = document.createElement('option'); option.value = String(item.hwnd); option.textContent = `${item.title} (PID ${item.pid})`; select.append(option);
     }
     if ([...select.options].some(option => option.value === previous)) select.value = previous;
-    if (!result.windows.length) { const option = document.createElement('option'); option.value = ''; option.textContent = '対象が見つかりません'; select.append(option); }
+    if (!result.windows.length) { const option = document.createElement('option'); option.value = ''; option.textContent = t('no_windows'); select.append(option); }
   }
   async function preview() {
     const thisGeneration = generation;
@@ -117,9 +159,11 @@ if (admin) {
     const qr = await api('/api/admin/qr', undefined, true); replaceImage($('qr'), qr.blob);
   }
   init().catch(showError);
+  draw();
+  onLanguageChange = draw;
   async function pollStatus() {
     try { const result = await api('/api/admin/status'); displayStatus(result.status); }
-    catch (error) { $('status').textContent = '切断 · PCホストへの接続に失敗しました'; showError(error); $('control').disabled = true; }
+    catch (error) { $('status').textContent = t('disconnected_admin'); showError(error); $('control').disabled = true; }
     setTimeout(pollStatus, 700);
   }
   pollStatus();
@@ -131,7 +175,7 @@ if (admin) {
   async function tap(event, panel, image, shownFrame) {
     if (sending) return;
     if (!rendered || rendered !== shownFrame || !shownFrame.control || performance.now() >= shownFrame.expires) {
-      showError('閲覧専用、または表示期限が切れています。表示の更新を待ってください。'); return;
+      showError(t('tap_refused')); return;
     }
     const bounds = image.getBoundingClientRect();
     const x = (event.clientX - bounds.left) / bounds.width, y = (event.clientY - bounds.top) / bounds.height;
@@ -148,14 +192,14 @@ if (admin) {
       else {
         const frame = result.frame;
         const images = await Promise.all(frame.panels.map((_, i) => api(`/api/frame?id=${encodeURIComponent(frame.id)}&panel=${i}`, undefined, true)));
-        if (performance.now() - started >= result.status.ttl * 1000) throw new Error('フレームの受信期限が切れました。');
+        if (performance.now() - started >= result.status.ttl * 1000) throw new Error(t('frame_late'));
         // Atomic DOM swap only after every image arrives; old identities never label new pixels.
         const shownFrame = {id: frame.id, control: result.status.control, expires: started + result.status.ttl * 1000};
         const fragment = document.createDocumentFragment(), urls = [];
         images.forEach((result, i) => {
           const section = document.createElement('section'); section.className = 'panel';
-          const title = document.createElement('h2'); title.textContent = `領域 ${i + 1}`;
-          const image = document.createElement('img'); image.alt = `領域 ${i + 1} のライブ画面`;
+          const title = document.createElement('h2'); title.textContent = t('region_title', {n: i + 1});
+          const image = document.createElement('img'); image.alt = t('region_alt', {n: i + 1});
           const url = URL.createObjectURL(result.blob); urls.push(url); image.src = url;
           if (shownFrame.control) image.className = 'actionable';
           image.onclick = event => tap(event, i, image, shownFrame);
@@ -163,9 +207,9 @@ if (admin) {
         });
         clearPanels(); $('panels').append(fragment); panelUrls = urls; rendered = shownFrame; showError('');
       }
-    } catch (error) { clearPanels(); $('status').textContent = '切断・表示停止 · PCとネットワークを確認してください'; showError(error); }
+    } catch (error) { clearPanels(); $('status').textContent = t('disconnected_viewer'); showError(error); }
     setTimeout(poll, 350);
   }
-  setInterval(() => { if (rendered && performance.now() >= rendered.expires) { clearPanels(); $('status').textContent = '表示期限切れ · 更新を待っています'; } }, 100);
+  setInterval(() => { if (rendered && performance.now() >= rendered.expires) { clearPanels(); $('status').textContent = t('expired_waiting'); } }, 100);
   poll();
 }

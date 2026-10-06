@@ -28,13 +28,17 @@ Two findings from this session were fixed in 0.1.0a3:
 
 An earlier attempt that placed the DPI-unaware test window partly off-screen was refused with "cursor position does not match": Windows clamped the cursor to the screen edge and PanelPop declined to click, as designed.
 
+## English interface — 2026-10-06 (0.1.0a4)
+
+Headless Edge 154 against the synthetic demo host: the settings page and the phone viewer were exercised in English and Japanese (select a window, drag two regions, apply, allow control, tap). In English no Japanese text remained apart from the language toggle; no script errors. Clicking the toggle switched the page in place, and a reload without `?lang` kept the choice.
+
 ## Automated tests
 
 ```sh
 python -m unittest discover -s tests -v
 ```
 
-34 cases: rectangle and coordinate validation, negative monitor origins, view-only default, frame expiry (including exactly at the deadline and expiry during native checks), geometry/PID/visibility/minimize pause latching, occlusion and cloaked-window handling, Stop and explicit resume, cursor readback mismatch, partial `SendInput`, HTTP roles, Host/Origin/Fetch-Metadata checks, loopback-only administration, CSP and static allowlist, body limits, reset-free rejections, and CLI defaults.
+44 cases: rectangle and coordinate validation, negative monitor origins, view-only default, frame expiry (including exactly at the deadline and expiry during native checks), geometry/PID/visibility/minimize pause latching, occlusion and cloaked-window handling, Stop and explicit resume, cursor readback mismatch, partial `SendInput`, HTTP roles, Host/Origin/Fetch-Metadata checks, loopback-only administration, CSP and static allowlist, body limits, reset-free rejections, CLI defaults, and the language layer (matching Japanese/English keys, every used key defined, replies and pause reasons localized per request).
 
 Win32 contract tests use a fake `user32`/`dwmapi`; they check the backend's logic, not the Windows ABI. GitHub Actions runs the suite on Ubuntu and Windows with Python 3.10, 3.12 and 3.14 and builds the wheel and sdist.
 

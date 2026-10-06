@@ -6,15 +6,22 @@ import math
 import secrets
 import threading
 import time
+from .messages import text
 
 
 class SafetyError(ValueError):
-    pass
+    """A refusal people see; `key` names its text in messages.MESSAGES."""
+    def __init__(self, key, detail=''):
+        self.key, self.detail = key, str(detail)
+        super().__init__(text(key, 'en', self.detail))
+
+    def text(self, lang):
+        return text(self.key, lang, self.detail)
 
 
 def check_deadline(deadline, clock):
     if clock() >= deadline:
-        raise SafetyError('表示期限が切れました。表示を更新してください。')
+        raise SafetyError('expired')
 
 
 @dataclass(frozen=True)
@@ -35,21 +42,21 @@ def integer(value):
 
 def validate_geometry(g):
     if not g.visible or g.minimized or g.width <= 0 or g.height <= 0:
-        raise SafetyError('対象は非表示・最小化、または無効です。PCで確認してください。')
+        raise SafetyError('target_hidden')
     if g.width > 8192 or g.height > 8192 or g.width * g.height > 16_000_000:
-        raise SafetyError('対象が大きすぎます（最大1600万画素）。')
+        raise SafetyError('target_too_large')
 
 
 def validate_regions(regions, width, height):
     if not isinstance(regions, list) or not 1 <= len(regions) <= 4:
-        raise SafetyError('領域は1〜4個必要です。')
+        raise SafetyError('region_count')
     result = []
     for region in regions:
         if not isinstance(region, (list, tuple)) or len(region) != 4 or not all(integer(v) for v in region):
-            raise SafetyError('領域は整数の x, y, 幅, 高さで指定してください。')
+            raise SafetyError('region_format')
         x, y, w, h = region
         if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > width or y + h > height:
-            raise SafetyError('領域がクライアント画面外です。')
+            raise SafetyError('region_outside')
         result.append((x, y, w, h))
     return result
 
@@ -66,52 +73,53 @@ class PanelState:
         self.frames = OrderedDict()
         self.control = False
         self.paused = False
-        self.reason = ''
+        self.reason = None  # (message key, detail) of the latest pause
 
-    def _pause(self, reason):
+    def _pause(self, key, detail=''):
         self.paused = True
         self.control = False
-        self.reason = str(reason)
+        self.reason = (key, str(detail))
         self.frames.clear()
-        raise SafetyError(self.reason)
+        raise SafetyError(key, detail)
 
     def _check(self, point=None):
         if self.paused:
-            raise SafetyError(self.reason or 'PCで再開してください。')
+            raise SafetyError(*(self.reason or ('resume_on_pc',)))
         if self.target is None:
-            raise SafetyError('PCで対象と領域を設定してください。')
+            raise SafetyError('not_configured')
         try:
             current = self.backend.snapshot(self.target.hwnd)
             validate_geometry(current)
             if current != self.target:
-                self._pause('対象の位置・サイズ・状態が変わりました。PCで再開してください。')
+                self._pause('target_changed')
             if not self.backend.safe(current, point):
-                self._pause('対象が他のウィンドウに遮られています。PCで確認して再開してください。')
+                self._pause('target_covered')
             return current
         except SafetyError as error:
             if not self.paused:
-                self._pause(error)
+                self._pause(error.key, error.detail)
             raise
         except Exception as error:
-            self._pause('対象の検査に失敗しました: ' + str(error))
+            self._pause('inspection_failed', error)
 
     def configure(self, hwnd, regions):
         with self.lock:
             if not integer(hwnd) or hwnd <= 0:
-                raise SafetyError('対象ウィンドウが無効です。')
+                raise SafetyError('invalid_window')
             g = self.backend.snapshot(hwnd)
             validate_geometry(g)
             selected = validate_regions(regions, g.width, g.height)
             if not self.backend.safe(g):
-                raise SafetyError('対象が遮られています。前面に表示してください。')
+                raise SafetyError('covered_bring_front')
             self.target, self.regions = g, selected
             self.frames.clear()
-            self.control, self.paused, self.reason = False, False, ''
+            self.control, self.paused, self.reason = False, False, None
 
-    def status(self):
+    def status(self, lang='en'):
         with self.lock:
+            reason = text(self.reason[0], lang, self.reason[1]) if self.reason else ''
             return dict(configured=self.target is not None, paused=self.paused, control=self.control,
-                        reason=self.reason, demo=bool(self.backend.demo), ttl=self.ttl,
+                        reason=reason, demo=bool(self.backend.demo), ttl=self.ttl,
                         regions=[list(r) for r in self.regions])
 
     def capture(self):
@@ -121,7 +129,7 @@ class PanelState:
                 image = self.backend.capture(g)
                 self._check()
                 if image.size != (g.width, g.height):
-                    self._pause('撮影サイズが変わりました。')
+                    self._pause('capture_size_changed')
                 blobs = []
                 for x, y, w, h in self.regions:
                     buffer = io.BytesIO()
@@ -136,15 +144,15 @@ class PanelState:
             except SafetyError:
                 raise
             except Exception as error:
-                self._pause('撮影に失敗しました: ' + str(error))
+                self._pause('capture_failed', error)
 
     def _frame(self, ident, panel):
         if not isinstance(ident, str) or ident not in self.frames:
-            raise SafetyError('フレームが無効です。表示を更新してください。')
+            raise SafetyError('invalid_frame')
         frame = self.frames[ident]
         check_deadline(frame[0] + self.ttl, self.clock)
         if not integer(panel) or not 0 <= panel < len(frame[3]):
-            raise SafetyError('領域番号が無効です。')
+            raise SafetyError('invalid_panel')
         return frame
 
     def image(self, ident, panel):
@@ -155,13 +163,13 @@ class PanelState:
     def click(self, ident, panel, x, y):
         with self.lock:
             if not self.control:
-                raise SafetyError('閲覧専用です。操作許可はPC側で設定します。')
+                raise SafetyError('view_only')
             frame = self._frame(ident, panel)
             for v in (x, y):
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v < 1:
-                    raise SafetyError('タップが領域外、または無効です。')
+                    raise SafetyError('invalid_tap')
             if frame[1] != self.target or frame[2] != tuple(self.regions):
-                raise SafetyError('設定が変わりました。表示を更新してください。')
+                raise SafetyError('config_changed')
             rx, ry, rw, rh = frame[2][panel]
             sx = frame[1].x + rx + math.floor(x * rw)
             sy = frame[1].y + ry + math.floor(y * rh)
@@ -171,47 +179,47 @@ class PanelState:
             try:
                 self.backend.click(sx, sy, deadline=deadline, clock=self.clock)
             except Exception as error:
-                self._pause('入力に失敗しました: ' + str(error))
+                self._pause('input_failed', error)
 
     def set_control(self, enabled):
         with self.lock:
             if not isinstance(enabled, bool):
-                raise SafetyError('操作許可はtrue/falseが必要です。')
+                raise SafetyError('control_bool')
             if enabled:
                 self._check()
             self.control = enabled
 
     def stop(self):
         with self.lock:
-            self.control, self.paused, self.reason = False, True, 'PCで停止しました。再開もPCで行います。'
+            self.control, self.paused, self.reason = False, True, ('stopped', '')
             self.frames.clear()
 
     def resume(self):
         with self.lock:
             if self.target is None:
-                raise SafetyError('先に対象を設定してください。')
+                raise SafetyError('configure_first')
             g = self.backend.snapshot(self.target.hwnd)
             validate_geometry(g)
             if g.pid != self.target.pid or g.hwnd != self.target.hwnd:
-                raise SafetyError('対象のプロセスが変わりました。選び直してください。')
+                raise SafetyError('process_changed')
             validate_regions([list(r) for r in self.regions], g.width, g.height)
             if not self.backend.safe(g):
-                raise SafetyError('対象が遮られています。')
+                raise SafetyError('covered')
             self.target = g
             self.frames.clear()
-            self.control, self.paused, self.reason = False, False, ''
+            self.control, self.paused, self.reason = False, False, None
 
     def preview(self, hwnd):
         with self.lock:
             if not integer(hwnd) or hwnd <= 0:
-                raise SafetyError('対象が無効です。')
+                raise SafetyError('invalid_window')
             g = self.backend.snapshot(hwnd)
             validate_geometry(g)
             if not self.backend.safe(g):
-                raise SafetyError('対象が遮られています。前面に表示してください。')
+                raise SafetyError('covered_bring_front')
             image = self.backend.capture(g)
             if self.backend.snapshot(hwnd) != g or not self.backend.safe(g):
-                raise SafetyError('撮影中に対象が変わりました。')
+                raise SafetyError('changed_during_capture')
             buffer = io.BytesIO()
             image.convert('RGB').save(buffer, 'JPEG', quality=75)
             return g, buffer.getvalue()

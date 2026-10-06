@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panelpop"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Local Windows client-area panels and guarded phone clicks"
 readme = "README.en.md"
 requires-python = ">=3.10"
@@ -15,6 +15,8 @@ dependencies = ["Pillow>=10.4,<13", "qrcode>=8,<9"]
 keywords = ["windows", "screen-sharing", "remote-control", "lan", "smartphone"]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Natural Language :: English",
+  "Natural Language :: Japanese",
   "Operating System :: Microsoft :: Windows :: Windows 10",
   "Operating System :: Microsoft :: Windows :: Windows 11",
   "Programming Language :: Python :: 3",

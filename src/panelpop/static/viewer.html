@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PanelPop</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body data-page="viewer"><header><p class="eyebrow">PC → PHONE</p><h1>PanelPop</h1><p>必要な画面を、手元に。</p></header>
-<main><p id="demo" class="banner" hidden>合成デモ — 実際のPC画面・OS入力は使いません。</p><p id="status" class="status" role="status">接続しています…</p><p id="error" role="alert"></p><p id="instructions">初期状態は閲覧専用です。操作を許可すると、画像のタップがPCの左クリックになります。停止・再開はPC側で行ってください。</p><div id="panels" class="panels"></div><p class="hint">画面は2秒で期限切れになります。通信が途切れた画像からは操作できません。</p></main>
-<footer>PanelPop · ローカルネットワーク用アルファ</footer></body></html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PanelPop</title><link rel="stylesheet" href="/style.css"><script src="/text.js" defer></script><script src="/app.js" defer></script></head>
+<body data-page="viewer"><header><button id="lang" class="lang-toggle" type="button">English</button><p class="eyebrow">PC → PHONE</p><h1>PanelPop</h1><p data-i18n="tagline">必要な画面を、手元に。</p></header>
+<main><p id="demo" class="banner" hidden data-i18n="demo_banner">合成デモ — 実際のPC画面の撮影やOSへの入力は行いません。</p><p id="status" class="status" role="status">接続しています…</p><p id="error" role="alert"></p><p id="instructions" data-i18n="viewer_instructions">最初は閲覧専用です。PCで操作を許可すると、画像のタップがその位置の左クリックになります。停止と再開はPCで行います。</p><div id="panels" class="panels"></div><p class="hint" data-i18n="viewer_hint">表示は2秒で期限切れになります。通信が途切れた画像からは操作できません。</p></main>
+<footer data-i18n="viewer_footer">PanelPop · ローカルネットワーク用アルファ版</footer></body></html>

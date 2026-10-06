@@ -39,7 +39,7 @@ class INPUT(ctypes.Structure):
 
 def load_api():
     if sys.platform != 'win32':
-        raise SafetyError('Windows 10/11が必要です。他OSでは --demo を指定してください。')
+        raise SafetyError('windows_required')
     api = ctypes.WinDLL('user32', use_last_error=True)
     hwnd, boolean, uint = wintypes.HWND, wintypes.BOOL, wintypes.UINT
     signatures = {
@@ -77,7 +77,7 @@ def enable_dpi(api):
     if not api.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
         context = api.GetThreadDpiAwarenessContext()
         if api.GetAwarenessFromDpiAwarenessContext(context) != 2:
-            raise SafetyError('Per-monitor DPI awarenessを設定できませんでした。')
+            raise SafetyError('dpi_failed')
 
 
 class WindowsBackend:
@@ -102,13 +102,13 @@ class WindowsBackend:
     def snapshot(self, hwnd):
         api = self.api
         if not api.IsWindow(hwnd):
-            raise SafetyError('対象ウィンドウがありません。')
+            raise SafetyError('window_gone')
         pid = ctypes.c_uint32()
         if not api.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)):
-            raise SafetyError('対象プロセスを取得できません。')
+            raise SafetyError('process_unknown')
         rect, origin = RECT(), POINT()
         if not api.GetClientRect(hwnd, ctypes.byref(rect)) or not api.ClientToScreen(hwnd, ctypes.byref(origin)):
-            raise SafetyError('クライアント座標を取得できません。')
+            raise SafetyError('client_rect_failed')
         return Geometry(int(hwnd), pid.value, origin.x, origin.y, rect.right - rect.left,
                         rect.bottom - rect.top, bool(api.IsWindowVisible(hwnd)), bool(api.IsIconic(hwnd)))
 
@@ -165,13 +165,13 @@ class WindowsBackend:
         self._input_target = None
         check_deadline(deadline, clock)
         if target is None or self.snapshot(target.hwnd) != target or not self.safe(target, (x, y)):
-            raise SafetyError('入力直前に対象が変わりました。')
+            raise SafetyError('changed_before_input')
         check_deadline(deadline, clock)
         if not self.api.SetCursorPos(x, y):
-            raise SafetyError('カーソル移動に失敗しました。')
+            raise SafetyError('cursor_move_failed')
         # Cursor movement itself can change hover popups: check again immediately.
         if self.snapshot(target.hwnd) != target or not self.safe(target, (x, y)):
-            raise SafetyError('カーソル移動後に対象が変わりました。')
+            raise SafetyError('changed_after_move')
         events = (INPUT * 2)()
         events[0].type, events[0].mi.dwFlags = 0, 0x0002  # left down
         events[1].type, events[1].mi.dwFlags = 0, 0x0004  # left up
@@ -179,7 +179,7 @@ class WindowsBackend:
         # desktop input may also move it during the safety checks. Fail closed.
         position = POINT()
         if not self.api.GetCursorPos(ctypes.byref(position)) or (position.x, position.y) != (x, y):
-            raise SafetyError('カーソルの実位置を確認できない、または指定位置と一致しません。')
+            raise SafetyError('cursor_mismatch')
         check_deadline(deadline, clock)
         sent = self.api.SendInput(2, events, ctypes.sizeof(INPUT))
         self._input_target = None
@@ -188,4 +188,4 @@ class WindowsBackend:
             release = (INPUT * 1)()
             release[0].mi.dwFlags = 0x0004
             self.api.SendInput(1, release, ctypes.sizeof(INPUT))
-            raise SafetyError('SendInputが完了しませんでした（UIPI/昇格アプリの制限を含む）。')
+            raise SafetyError('sendinput_failed')

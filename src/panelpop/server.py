@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 import qrcode
 from .core import SafetyError
+from .messages import language, text
 
 STATIC = Path(__file__).with_name('static')
 MAX_JSON = 32768
@@ -66,8 +67,8 @@ def create_server(host, port, state, *, viewer_token=None, admin_token=None, adv
 
 
 class HTTPError(Exception):
-    def __init__(self, status, message):
-        self.status, self.message = status, message
+    def __init__(self, status, key):
+        self.status, self.key = status, key
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -121,38 +122,38 @@ class Handler(BaseHTTPRequestHandler):
             pass
     def route(self, mutation=False):
         if len(self.path) > 2048:
-            raise HTTPError(414, 'URLが長すぎます。')
+            raise HTTPError(414, 'url_too_long')
         host = self.headers.get('Host', '')
         if host not in self.server.allowed_hosts or self.headers.get('Sec-Fetch-Site') == 'cross-site':
-            raise HTTPError(403, 'Hostまたは接続元が許可されていません。')
+            raise HTTPError(403, 'host_refused')
         if mutation and self.headers.get('Origin', '') != 'http://' + host:
-            raise HTTPError(403, 'Originが一致しません。')
+            raise HTTPError(403, 'origin_mismatch')
         parts = urlsplit(self.path)
         if parts.scheme or parts.netloc:
-            raise HTTPError(400, '絶対URLは使用できません。')
+            raise HTTPError(400, 'absolute_url')
         try:
             query = parse_qs(parts.query, max_num_fields=8)
         except ValueError:
-            raise HTTPError(400, 'クエリが無効です。')
+            raise HTTPError(400, 'bad_query')
         path = parts.path
         admin = path == '/admin' or path.startswith('/api/admin/')
         if admin and not self.server.admin_address_allowed(self.client_address[0]):
-            raise HTTPError(403, 'PC管理画面はループバック接続専用です。')
+            raise HTTPError(403, 'admin_loopback')
         if path.startswith('/api/'):
             token = self.headers.get('X-PanelPop-Token', '')
             expected = self.server.admin_token if admin else self.server.viewer_token
             if not hmac.compare_digest(token.encode(), expected.encode()):
-                raise HTTPError(401, '接続トークンが無効です。PCのURL/QRから開いてください。')
+                raise HTTPError(401, 'bad_token')
         return path, query
     def body(self):
         if self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
-            raise HTTPError(415, 'application/jsonが必要です。')
+            raise HTTPError(415, 'json_required')
         length = self.headers.get('Content-Length', '')
         if not length.isascii() or not length.isdecimal():
-            raise HTTPError(400, 'Content-Lengthが無効です。')
+            raise HTTPError(400, 'bad_length')
         length = int(length)
         if length > MAX_JSON:
-            raise HTTPError(413, '送信データが大きすぎます。')
+            raise HTTPError(413, 'too_large')
         def invalid_constant(value):
             raise ValueError('Non-finite number')
         self.unread = 0
@@ -162,51 +163,54 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('object required')
             return body
         except (ValueError, UnicodeDecodeError):
-            raise HTTPError(400, 'JSONが無効です。')
+            raise HTTPError(400, 'bad_json')
     def execute(self, action):
+        # The page sends its interface language; replies follow it (English otherwise).
+        self.lang = language(self.headers.get('Accept-Language'))
         try:
             action()
         except HTTPError as error:
-            self.respond(error.status, dict(error=error.message))
+            self.respond(error.status, dict(error=text(error.key, self.lang)))
         except SafetyError as error:
-            self.respond(409, dict(error=str(error), status=self.server.state.status()))
+            self.respond(409, dict(error=error.text(self.lang), status=self.server.state.status(self.lang)))
         except (KeyError, TypeError, ValueError, OverflowError):
-            self.respond(400, dict(error='入力の形式が無効です。'))
+            self.respond(400, dict(error=text('bad_input', self.lang)))
         except (TimeoutError, ConnectionError):
             self.close_connection = True
         except Exception:
-            self.respond(500, dict(error='処理に失敗しました。PCの対象と設定を確認してください。'))
+            self.respond(500, dict(error=text('server_error', self.lang)))
     def do_GET(self):
         self.execute(self.get)
     def do_POST(self):
         self.execute(self.post)
     def do_OPTIONS(self):
-        self.respond(405, dict(error='CORSは許可していません。'))
+        self.respond(405, dict(error=text('no_cors', language(self.headers.get('Accept-Language')))))
     def get(self):
         path, query = self.route()
         state = self.server.state
         allowlist = {'/': ('viewer.html', 'text/html; charset=utf-8'), '/admin': ('admin.html', 'text/html; charset=utf-8'),
-                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/text.js': ('text.js', 'text/javascript; charset=utf-8'),
+                     '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if path in allowlist:
             name, kind = allowlist[path]
             return self.respond(200, (STATIC / name).read_bytes(), kind)
         if path == '/api/state':
             frame, error = None, ''
-            status = state.status()
+            status = state.status(self.lang)
             if status['configured'] and not status['paused']:
                 try:
                     frame = state.capture()
                 except SafetyError as failure:
-                    error = str(failure)
-            return self.respond(200, dict(status=state.status(), frame=frame, error=error))
+                    error = failure.text(self.lang)
+            return self.respond(200, dict(status=state.status(self.lang), frame=frame, error=error))
         if path == '/api/frame':
             return self.respond(200, state.image(query['id'][0], int(query['panel'][0])), 'image/jpeg')
         if path == '/api/admin/windows':
             with state.lock:
                 windows = state.backend.windows()
-            return self.respond(200, dict(windows=windows, status=state.status()))
+            return self.respond(200, dict(windows=windows, status=state.status(self.lang)))
         if path == '/api/admin/status':
-            return self.respond(200, dict(status=state.status()))
+            return self.respond(200, dict(status=state.status(self.lang)))
         if path == '/api/admin/preview':
             geometry, jpeg = state.preview(int(query['hwnd'][0]))
             return self.respond(200, jpeg, 'image/jpeg', {'X-Image-Width': str(geometry.width), 'X-Image-Height': str(geometry.height)})
@@ -216,12 +220,12 @@ class Handler(BaseHTTPRequestHandler):
             buffer = io.BytesIO()
             qrcode.make(self.server.viewer_url).save(buffer, format='PNG')
             return self.respond(200, buffer.getvalue(), 'image/png')
-        raise HTTPError(404, 'ページがありません。')
+        raise HTTPError(404, 'not_found')
     def post(self):
         path, _ = self.route(mutation=True)
         routes = {'/api/click', '/api/admin/configure', '/api/admin/mode', '/api/admin/stop', '/api/admin/resume'}
         if path not in routes:
-            raise HTTPError(404, '操作がありません。')
+            raise HTTPError(404, 'no_action')
         body, state = self.body(), self.server.state
         if path == '/api/click':
             state.click(body['id'], body['panel'], body['x'], body['y'])
@@ -233,4 +237,4 @@ class Handler(BaseHTTPRequestHandler):
             state.stop()
         elif path == '/api/admin/resume':
             state.resume()
-        self.respond(200, dict(ok=True, status=state.status()))
+        self.respond(200, dict(ok=True, status=state.status(self.lang)))

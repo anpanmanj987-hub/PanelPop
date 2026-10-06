@@ -22,6 +22,10 @@ After those checks, pointer-bound `GetCursorPos(LPPOINT) -> BOOL` must succeed a
 
 Checks and OS operations are not atomic. A window can move, close or become covered between the final check and global input. Global cursor movement affects the user's desktop. UIPI can block injection into elevated apps; `SendInput` does not reliably identify UIPI as its cause. Conservative overlap rejection may reject transparent or pop-up windows. Protected pixels and native capture hangs remain OS limitations. Locking prevents internal Stop/mode races, not desktop races.
 
+## Languages
+
+All text people see is keyed. Python messages live in `messages.py` as Japanese/English pairs; `SafetyError` carries a key and an optional detail, and the stored pause reason is a key too, so each request is answered in its own language. The host picks the language from the first `ja` or `en` tag of `Accept-Language` and defaults to English. Interface text lives in `static/text.js`, a single JSON object the tests parse. The page chooses `?lang=`, then a remembered choice, then the first `ja`/`en` entry of `navigator.languages`, and sends that language on every request.
+
 ## HTTP boundary
 
 Loopback is the default listener; LAN bind requires `--lan --advertise RFC1918_IPV4`. Each launch generates independent `secrets.token_urlsafe(32)` admin and viewer tokens. URLs carry tokens only in fragments. JavaScript stores the appropriate role token in tab session storage, removes the fragment from the visible URL, and passes credentials in `X-PanelPop-Token`. Admin requires an actual loopback TCP source address even if the token is correct. Forwarded headers are ignored.
